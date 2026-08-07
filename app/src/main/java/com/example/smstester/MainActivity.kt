@@ -347,7 +347,6 @@ fun SmsTesterApp() {
                                         } else {
                                             smsDelay * 1000
                                         }
-
                                         repeat(limit) {
 
                                             SmsSender.send(
