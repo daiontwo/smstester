@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "491652662082",
+    "project_id": "smstester-29fb6",
+    "storage_bucket": "smstester-29fb6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:491652662082:android:7d8081e23ca8cb98da7edb",
+        "android_client_info": {
+          "package_name": "com.antteam.smstester"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBg8ffkGqZUgdHA14aUnfoF7B2Icx1RqvQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
