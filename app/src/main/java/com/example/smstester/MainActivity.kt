@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,14 +28,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.google.firebase.database.FirebaseDatabase
+import kotlinx.coroutines.flow.first
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
-import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 
 
 @Composable
@@ -49,6 +50,16 @@ fun SelectAllTextField(
         mutableStateOf(TextFieldValue(value))
     }
 
+    val focusManager = LocalFocusManager.current
+    val keyboardController =
+        LocalSoftwareKeyboardController.current
+
+    val scope = rememberCoroutineScope()
+
+    var focusJob by remember {
+        mutableStateOf<Job?>(null)
+    }
+
     LaunchedEffect(value) {
         fieldValue = fieldValue.copy(
             text = value,
@@ -59,26 +70,298 @@ fun SelectAllTextField(
     OutlinedTextField(
         value = fieldValue,
         onValueChange = {
+
             fieldValue = it
             onValueChange(it.text)
+
+            focusJob?.cancel()
+
+            focusJob = scope.launch {
+
+                delay(7000)
+
+                focusManager.clearFocus(
+                    force = true
+                )
+
+                keyboardController?.hide()
+            }
         },
         label = {
             Text(label)
         },
         modifier = modifier.onFocusChanged { focus ->
+
             if (focus.isFocused) {
-                fieldValue = fieldValue.copy(
-                    selection = TextRange(
-                        0,
-                        fieldValue.text.length
+
+                fieldValue =
+                    fieldValue.copy(
+                        selection =
+                            TextRange(
+                                0,
+                                fieldValue.text.length
+                            )
                     )
-                )
+
+            } else {
+
+                focusJob?.cancel()
             }
         },
         keyboardOptions = KeyboardOptions(
             keyboardType = keyboardType
         )
     )
+}
+
+
+@Composable
+fun ScheduleBlock(
+    index: Int,
+    schedule: ScheduleConfig,
+    delayInMs: Boolean,
+    canDelete: Boolean,
+    onChange: (ScheduleConfig) -> Unit,
+    onDelete: () -> Unit
+) {
+
+    ElevatedCard(
+        modifier =
+            Modifier.fillMaxWidth()
+    ) {
+
+        Column(
+            modifier =
+                Modifier.padding(14.dp),
+
+            verticalArrangement =
+                Arrangement.spacedBy(10.dp)
+        ) {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                verticalAlignment =
+                    androidx.compose.ui.Alignment.CenterVertically
+            ) {
+
+                Column(
+                    modifier =
+                        Modifier.weight(1f)
+                ) {
+
+                    Text(
+                        text =
+                            "Расписание ${index + 1}",
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .titleSmall,
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+
+                    val minute =
+                        schedule.minute
+                            .padStart(2, '0')
+
+                    val second =
+                        schedule.second
+                            .padStart(2, '0')
+
+                    Text(
+                        text =
+                            "Каждый час в $minute:$second",
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .bodySmall,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurfaceVariant
+                    )
+                }
+
+                if (canDelete) {
+
+                    TextButton(
+                        onClick = onDelete
+                    ) {
+
+                        Text(
+                            text = "Удалить",
+                            color =
+                                MaterialTheme
+                                    .colorScheme
+                                    .error
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
+                SelectAllTextField(
+                    value =
+                        schedule.minute,
+
+                    onValueChange = {
+                        value ->
+
+                        onChange(
+                            schedule.copy(
+                                minute =
+                                    value
+                                        .filter(
+                                            Char::isDigit
+                                        )
+                                        .take(2)
+                            )
+                        )
+                    },
+
+                    label =
+                        "Минута",
+
+                    modifier =
+                        Modifier.weight(1f),
+
+                    keyboardType =
+                        KeyboardType.Number
+                )
+
+                SelectAllTextField(
+                    value =
+                        schedule.second,
+
+                    onValueChange = {
+                        value ->
+
+                        onChange(
+                            schedule.copy(
+                                second =
+                                    value
+                                        .filter(
+                                            Char::isDigit
+                                        )
+                                        .take(2)
+                            )
+                        )
+                    },
+
+                    label =
+                        "Секунда",
+
+                    modifier =
+                        Modifier.weight(1f),
+
+                    keyboardType =
+                        KeyboardType.Number
+                )
+            }
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
+                SelectAllTextField(
+                    value =
+                        schedule.interval,
+
+                    onValueChange = {
+                        value ->
+
+                        onChange(
+                            schedule.copy(
+                                interval =
+                                    value.filter(
+                                        Char::isDigit
+                                    )
+                            )
+                        )
+                    },
+
+                    label =
+                        if (delayInMs) {
+                            "Интервал мс"
+                        } else {
+                            "Интервал сек"
+                        },
+
+                    modifier =
+                        Modifier.weight(1f),
+
+                    keyboardType =
+                        KeyboardType.Number
+                )
+
+                SelectAllTextField(
+                    value =
+                        schedule.count,
+
+                    onValueChange = {
+                        value ->
+
+                        onChange(
+                            schedule.copy(
+                                count =
+                                    value.filter(
+                                        Char::isDigit
+                                    )
+                            )
+                        )
+                    },
+
+                    label =
+                        "Кол-во",
+
+                    modifier =
+                        Modifier.weight(1f),
+
+                    keyboardType =
+                        KeyboardType.Number
+                )
+            }
+
+            if (
+                !schedule.isValidSchedule()
+            ) {
+
+                Text(
+                    text =
+                        "Проверь значения: " +
+                            "минута/секунда 0–59, " +
+                            "количество от 1.",
+
+                    color =
+                        MaterialTheme
+                            .colorScheme
+                            .error,
+
+                    style =
+                        MaterialTheme
+                            .typography
+                            .bodySmall
+                )
+            }
+        }
+    }
 }
 
 
@@ -98,27 +381,52 @@ class MainActivity : ComponentActivity() {
 fun SmsTesterApp() {
 
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
-
-    var phone by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("7878") }
     var message by remember { mutableStateOf("") }
-    var sendLimitText by remember { mutableStateOf("5") }
     var summ by remember { mutableStateOf("14700") }
 
     var darkTheme by remember { mutableStateOf(false) }
 
-    var scheduleMinute by remember { mutableStateOf("59") }
-    var scheduleSecond by remember { mutableStateOf("52") }
+    var schedules by remember {
+        mutableStateOf(
+            listOf(
+                ScheduleConfig(id = 1L)
+            )
+        )
+    }
 
-    var smsDelayValue by remember { mutableStateOf("1") }
-    var delayInMs by remember { mutableStateOf(false) }
+    var delayInMs by remember {
+        mutableStateOf(false)
+    }
 
-    var running by remember { mutableStateOf(false) }
-    var sendJob by remember { mutableStateOf<Job?>(null) }
+    val running by SmsSendingState.running.collectAsState()
 
+    val sendingPulse by
+    SmsSendingState.sendingPulse.collectAsState()
+
+    var smsBorderActive by remember {
+        mutableStateOf(false)
+    }
+
+    // Короткая зелёная вспышка по периметру при каждой отправке SMS.
+    // Никакой постоянной анимации: рамка существует только 350 мс.
+    LaunchedEffect(sendingPulse) {
+
+        if (sendingPulse > 0) {
+
+            smsBorderActive = true
+
+            delay(350)
+
+            smsBorderActive = false
+        }
+    }
     var autoReply by remember { mutableStateOf(false) }
     var keyword by remember { mutableStateOf("8464") }
     var replyText by remember { mutableStateOf("да") }
+    var autoReplyLimit by remember { mutableStateOf("1") }
 
     // Не сохраняем значения обратно, пока сначала не загрузили их из DataStore.
     var settingsLoaded by remember { mutableStateOf(false) }
@@ -152,56 +460,70 @@ fun SmsTesterApp() {
 
     // Один раз при запуске восстанавливаем все сохранённые поля.
     LaunchedEffect(Unit) {
-        val saved = SettingsDataStore.settingsFlow(context).first()
 
-        phone = saved.phone
+        val saved =
+            SettingsDataStore
+                .settingsFlow(context)
+                .first()
+
+        phone =
+            saved.phone.ifBlank {
+                "7878"
+            }
+
         message = saved.message
-        sendLimitText = saved.sendLimitText
         summ = saved.summ
         darkTheme = saved.darkTheme
-        scheduleMinute = saved.scheduleMinute
-        scheduleSecond = saved.scheduleSecond
-        smsDelayValue = saved.smsDelayValue
+
+        schedules =
+            saved.schedules
+                .ifEmpty {
+                    listOf(
+                        ScheduleConfig(id = 1L)
+                    )
+                }
+                .take(MAX_SCHEDULES)
+
         delayInMs = saved.delayInMs
+
         autoReply = saved.autoReply
         keyword = saved.keyword
         replyText = saved.replyText
+        autoReplyLimit = saved.autoReplyCount
 
         settingsLoaded = true
     }
 
-    // После загрузки автоматически сохраняем любое изменение полей.
+    // После загрузки автоматически сохраняем любое изменение.
     LaunchedEffect(
         phone,
         message,
-        sendLimitText,
         summ,
         darkTheme,
-        scheduleMinute,
-        scheduleSecond,
-        smsDelayValue,
+        schedules,
         delayInMs,
         autoReply,
         keyword,
         replyText,
+        autoReplyLimit,
         settingsLoaded
     ) {
+
         if (settingsLoaded) {
+
             SettingsDataStore.save(
                 context = context,
                 settings = AppSettings(
                     phone = phone,
                     message = message,
-                    sendLimitText = sendLimitText,
                     summ = summ,
                     darkTheme = darkTheme,
-                    scheduleMinute = scheduleMinute,
-                    scheduleSecond = scheduleSecond,
-                    smsDelayValue = smsDelayValue,
+                    schedules = schedules,
                     delayInMs = delayInMs,
                     autoReply = autoReply,
                     keyword = keyword,
-                    replyText = replyText
+                    replyText = replyText,
+                    autoReplyCount = autoReplyLimit
                 )
             )
         }
@@ -227,12 +549,16 @@ fun SmsTesterApp() {
 
     LaunchedEffect(Unit) {
 
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.RECEIVE_SMS
-            )
-        )
+        val permissions = buildList {
+            add(Manifest.permission.SEND_SMS)
+            add(Manifest.permission.RECEIVE_SMS)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
+
+        permissionLauncher.launch(permissions)
 
 
         /*
@@ -365,61 +691,115 @@ fun SmsTesterApp() {
 
     val canSend =
         phone.isNotBlank() &&
-                message.isNotBlank() &&
-                summ.isNotBlank()
+            message.isNotBlank() &&
+            summ.isNotBlank()
 
+    val allSchedulesValid =
+        schedules.isNotEmpty() &&
+            schedules.all {
+                it.isValidSchedule()
+            }
 
     val canStart =
         canSend &&
-                sendLimitText.isNotBlank() &&
-                smsDelayValue.isNotBlank() &&
-                scheduleMinute.isNotBlank() &&
-                scheduleSecond.isNotBlank()
+            allSchedulesValid
 
-
-    var lastConfig by remember {
-        mutableStateOf("")
-    }
-
-
-    val currentConfig =
-        "$phone|" +
-                "$message|" +
-                "$summ|" +
-                "$scheduleMinute|" +
-                "$scheduleSecond|" +
-                "$smsDelayValue|" +
-                "$delayInMs|" +
-                sendLimitText
-
-
-    LaunchedEffect(currentConfig) {
+    /*
+     * Если сервис уже запущен и пользователь добавил,
+     * удалил или изменил расписание — отправляем сервису
+     * новую конфигурацию.
+     *
+     * Задержка 400 мс нужна, чтобы не дёргать сервис
+     * на каждую цифру во время быстрого ввода.
+     */
+    LaunchedEffect(
+        phone,
+        message,
+        summ,
+        schedules,
+        delayInMs,
+        running,
+        settingsLoaded
+    ) {
 
         if (
             running &&
-            lastConfig.isNotEmpty() &&
-            currentConfig != lastConfig
+            settingsLoaded &&
+            canStart
         ) {
 
-            sendJob?.cancel()
+            delay(400)
 
-            sendJob = null
-            running = false
+            val updateIntent =
+                Intent(
+                    context,
+                    SmsSendingService::class.java
+                ).apply {
+
+                    action =
+                        SmsSendingService.ACTION_UPDATE
+
+                    putExtra(
+                        SmsSendingService.EXTRA_PHONE,
+                        phone
+                    )
+
+                    putExtra(
+                        SmsSendingService.EXTRA_MESSAGE,
+                        message
+                    )
+
+                    putExtra(
+                        SmsSendingService.EXTRA_SUMM,
+                        summ
+                    )
+
+                    putExtra(
+                        SmsSendingService.EXTRA_SCHEDULES_JSON,
+                        schedulesToJson(schedules)
+                    )
+
+                    putExtra(
+                        SmsSendingService.EXTRA_DELAY_MS,
+                        delayInMs
+                    )
+                }
+
+            context.startService(updateIntent)
         }
-
-        lastConfig = currentConfig
     }
 
+
+    var previousAutoReplyEnabled by remember {
+        mutableStateOf(false)
+    }
 
     LaunchedEffect(
         autoReply,
         keyword,
-        replyText
+        replyText,
+        autoReplyLimit
     ) {
 
-        SmsStore.autoReplyEnabled = autoReply
         SmsStore.autoReplyKeyword = keyword
         SmsStore.autoReplyText = replyText
+
+        SmsStore.autoReplyLimit =
+            autoReplyLimit
+                .toIntOrNull()
+                ?.coerceIn(1, 100)
+                ?: 1
+
+        // При новом включении автоответа начинаем счётчик заново.
+        if (
+            autoReply &&
+            !previousAutoReplyEnabled
+        ) {
+            SmsStore.resetAutoReplyCounter()
+        }
+
+        SmsStore.autoReplyEnabled = autoReply
+        previousAutoReplyEnabled = autoReply
     }
 
 
@@ -532,23 +912,25 @@ fun SmsTesterApp() {
          * -----------------------------------------------------
          */
 
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
 
-            Column(
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+
+                Column(
                 modifier = Modifier
                     .padding(
                         20.dp,
                         50.dp,
                         20.dp,
-                        70.dp
+                        30.dp
                     )
                     .fillMaxHeight()
-                    .verticalScroll(
-                        rememberScrollState()
-                    )
+                    .verticalScroll(scrollState)
                     .fillMaxWidth(),
 
                 verticalArrangement =
@@ -694,6 +1076,9 @@ fun SmsTesterApp() {
                                 phone,
                                 "$message $summ"
                             )
+
+                            // Коротко подсвечиваем периметр экрана.
+                            SmsSendingState.pulse()
                         }
                     ) {
 
@@ -704,117 +1089,110 @@ fun SmsTesterApp() {
 
                 /*
                  * -------------------------------------------------
-                 * ВРЕМЯ ЗАПУСКА
+                 * НЕЗАВИСИМЫЕ РАСПИСАНИЯ
                  * -------------------------------------------------
                  */
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
+                schedules.forEachIndexed {
+                        index,
+                        schedule ->
+
+                    ScheduleBlock(
+                        index = index,
+                        schedule = schedule,
+                        delayInMs = delayInMs,
+
+                        canDelete =
+                            schedules.size > 1,
+
+                        onChange = { updated ->
+
+                            schedules =
+                                schedules.map {
+                                    current ->
+
+                                    if (
+                                        current.id ==
+                                        updated.id
+                                    ) {
+                                        updated
+                                    } else {
+                                        current
+                                    }
+                                }
+                        },
+
+                        onDelete = {
+
+                            if (
+                                schedules.size > 1
+                            ) {
+
+                                schedules =
+                                    schedules.filterNot {
+                                        it.id ==
+                                            schedule.id
+                                    }
+                            }
+                        }
+                    )
+                }
+
+                if (
+                    schedules.size <
+                    MAX_SCHEDULES
                 ) {
 
-
-                    SelectAllTextField(
-                        value = scheduleMinute,
-
-                        onValueChange = {
-                            scheduleMinute =
-                                it.filter(Char::isDigit)
-                        },
-
-                        label = "Минута запуска",
-
+                    OutlinedButton(
                         modifier =
-                            Modifier.weight(1f),
+                            Modifier.fillMaxWidth(),
 
-                        keyboardType =
-                            KeyboardType.Phone
-                    )
+                        onClick = {
 
+                            val nextId =
+                                (
+                                    schedules
+                                        .maxOfOrNull {
+                                            it.id
+                                        }
+                                        ?: 0L
+                                ) + 1L
 
-                    SelectAllTextField(
-                        value = scheduleSecond,
+                            schedules =
+                                schedules +
+                                    ScheduleConfig(
+                                        id = nextId
+                                    )
+                        }
+                    ) {
 
-                        onValueChange = {
-                            scheduleSecond =
-                                it.filter(Char::isDigit)
-                        },
+                        Text(
+                            "+ Добавить расписание"
+                        )
+                    }
 
-                        label = "Секунда запуска",
+                } else {
 
-                        modifier =
-                            Modifier.weight(1f),
+                    Text(
+                        text =
+                            "Максимум: $MAX_SCHEDULES расписаний",
 
-                        keyboardType =
-                            KeyboardType.Phone
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurfaceVariant,
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .bodySmall
                     )
                 }
 
 
                 /*
                  * -------------------------------------------------
-                 * ИНТЕРВАЛ / КОЛИЧЕСТВО
-                 * -------------------------------------------------
-                 */
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-
-
-                    SelectAllTextField(
-                        value = smsDelayValue,
-
-                        onValueChange = {
-
-                            smsDelayValue =
-                                it.filter(Char::isDigit)
-                        },
-
-                        label =
-                            if (delayInMs) {
-                                "Интервал мс"
-                            } else {
-                                "Интервал сек"
-                            },
-
-                        modifier =
-                            Modifier.weight(1f),
-
-                        keyboardType =
-                            KeyboardType.Number
-                    )
-
-
-                    SelectAllTextField(
-                        value = sendLimitText,
-
-                        onValueChange = {
-
-                            sendLimitText =
-                                it.filter(Char::isDigit)
-                        },
-
-                        label =
-                            "Количество отправок",
-
-                        modifier =
-                            Modifier.weight(1f),
-
-                        keyboardType =
-                            KeyboardType.Number
-                    )
-                }
-
-
-                /*
-                 * -------------------------------------------------
-                 * МИЛЛИСЕКУНДЫ
+                 * ЕДИНИЦЫ ИНТЕРВАЛА
                  * -------------------------------------------------
                  */
 
@@ -831,47 +1209,21 @@ fun SmsTesterApp() {
                         }
                     )
 
-
                     Text(
                         modifier =
                             Modifier.padding(10.dp),
 
                         text =
                             if (delayInMs) {
-                                "миллисекунды"
+                                "Интервал в миллисекундах"
                             } else {
-                                "секунды"
+                                "Интервал в секундах"
                             },
 
                         color =
                             Color(0xFF666666)
                     )
                 }
-
-
-                /*
-                 * -------------------------------------------------
-                 * ИНФОРМАЦИЯ
-                 * -------------------------------------------------
-                 */
-
-                Text(
-                    text =
-                        "Каждый час в $scheduleMinute минут $scheduleSecond секунд\n" +
-                                "Отправок: $sendLimitText\n" +
-                                "Интервал: $smsDelayValue " +
-                                if (delayInMs) {
-                                    "мс"
-                                } else {
-                                    "сек"
-                                },
-
-                    color =
-                        Color(0xFF666666),
-
-                    style =
-                        MaterialTheme.typography.bodyMedium
-                )
 
 
                 /*
@@ -897,122 +1249,65 @@ fun SmsTesterApp() {
 
                             if (!running) {
 
-                                running = true
+                                val intent =
+                                    Intent(
+                                        context,
+                                        SmsSendingService::class.java
+                                    ).apply {
 
+                                        action =
+                                            SmsSendingService.ACTION_START
 
-                                sendJob =
-                                    scope.launch {
+                                        putExtra(
+                                            SmsSendingService.EXTRA_PHONE,
+                                            phone
+                                        )
 
+                                        putExtra(
+                                            SmsSendingService.EXTRA_MESSAGE,
+                                            message
+                                        )
 
-                                        val minute =
-                                            scheduleMinute
-                                                .toIntOrNull()
-                                                ?: 59
+                                        putExtra(
+                                            SmsSendingService.EXTRA_SUMM,
+                                            summ
+                                        )
 
+                                        putExtra(
+                                            SmsSendingService.EXTRA_SCHEDULES_JSON,
+                                            schedulesToJson(schedules)
+                                        )
 
-                                        val second =
-                                            scheduleSecond
-                                                .toIntOrNull()
-                                                ?: 50
-
-
-                                        val limit =
-                                            sendLimitText
-                                                .toIntOrNull()
-                                                ?: 5
-
-
-                                        while (isActive) {
-
-
-                                            val now =
-                                                LocalDateTime.now()
-
-
-                                            var next =
-                                                now
-                                                    .withMinute(minute)
-                                                    .withSecond(second)
-                                                    .withNano(0)
-
-
-                                            /*
-                                             * Если время прошло —
-                                             * ждём следующий час.
-                                             */
-
-                                            if (!next.isAfter(now)) {
-
-                                                next =
-                                                    next.plusHours(1)
-                                            }
-
-
-                                            val waitMillis =
-                                                ChronoUnit.MILLIS
-                                                    .between(
-                                                        now,
-                                                        next
-                                                    )
-
-
-                                            delay(waitMillis)
-
-
-                                            /*
-                                             * Отправляем SMS.
-                                             */
-
-                                            val smsDelay =
-                                                smsDelayValue
-                                                    .toLongOrNull()
-                                                    ?: 1L
-
-
-                                            val delayMillis =
-                                                if (delayInMs) {
-
-                                                    smsDelay
-
-                                                } else {
-
-                                                    smsDelay * 1000
-                                                }
-
-
-                                            repeat(limit) {
-
-
-                                                SmsSender.send(
-                                                    phone,
-                                                    "$message $summ"
-                                                )
-
-
-                                                delay(
-                                                    delayMillis
-                                                )
-                                            }
-
-
-                                            running = false
-                                            sendJob = null
-                                        }
+                                        putExtra(
+                                            SmsSendingService.EXTRA_DELAY_MS,
+                                            delayInMs
+                                        )
                                     }
+
+                                ContextCompat
+                                    .startForegroundService(
+                                        context,
+                                        intent
+                                    )
 
                             } else {
 
+                                val intent =
+                                    Intent(
+                                        context,
+                                        SmsSendingService::class.java
+                                    ).apply {
 
-                                sendJob?.cancel()
+                                        action =
+                                            SmsSendingService.ACTION_STOP
+                                    }
 
-                                sendJob = null
-
-                                running = false
+                                context.startService(intent)
                             }
                         },
 
-                        colors =
-                            ButtonDefaults.buttonColors(
+                                colors =
+                                ButtonDefaults.buttonColors(
 
                                 containerColor =
                                     if (running) {
@@ -1020,7 +1315,7 @@ fun SmsTesterApp() {
                                     } else {
                                         Color(0xFF4CAF50)
                                     }
-                            )
+                                )
                     ) {
 
 
@@ -1033,75 +1328,6 @@ fun SmsTesterApp() {
                         )
                     }
                 }
-
-
-                HorizontalDivider()
-
-
-                /*
-                 * -------------------------------------------------
-                 * ВХОДЯЩИЕ SMS
-                 * -------------------------------------------------
-                 */
-
-                Text(
-                    "Последнее входящее SMS"
-                )
-
-
-                if (incoming.from == "8464") {
-
-
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    color =
-                                        Color(0xFFDFF7DF),
-
-                                    shape =
-                                        RoundedCornerShape(
-                                            12.dp
-                                        )
-                                )
-                                .padding(16.dp)
-                    ) {
-
-
-                        Text(
-                            text = "УСПЕШНО!",
-
-                            color =
-                                Color(0xFF2E7D32),
-
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-                    }
-                }
-
-
-                Text(
-                    "От: ${
-                        incoming.from.ifBlank {
-                            "—"
-                        }
-                    }"
-                )
-
-
-                Text(
-                    "Текст: ${
-                        incoming.text.ifBlank {
-                            "—"
-                        }
-                    }"
-                )
-
-
-                HorizontalDivider()
-
 
                 /*
                  * -------------------------------------------------
@@ -1118,8 +1344,22 @@ fun SmsTesterApp() {
                     Switch(
                         checked = autoReply,
 
-                        onCheckedChange = {
-                            autoReply = it
+                        onCheckedChange = { enabled ->
+
+                            autoReply = enabled
+
+                            if (enabled) {
+
+                                scope.launch {
+
+                                    // Ждём, пока Compose покажет поля автоответа.
+                                    delay(100)
+
+                                    scrollState.animateScrollTo(
+                                        scrollState.maxValue
+                                    )
+                                }
+                            }
                         }
                     )
 
@@ -1171,8 +1411,57 @@ fun SmsTesterApp() {
                         modifier =
                             Modifier.fillMaxWidth()
                     )
+
+
+                    SelectAllTextField(
+                        value = autoReplyLimit,
+
+                        onValueChange = {
+                            value ->
+
+                            autoReplyLimit =
+                                value
+                                    .filter(Char::isDigit)
+                                    .take(3)
+                        },
+
+                        label =
+                            "Лимит автоответов",
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        keyboardType =
+                            KeyboardType.Number
+                    )
+
+                    Text(
+                        text =
+                            "Ответить на " +
+                                "${autoReplyLimit.toIntOrNull() ?: 0} " + "SMS",
+
+                        style =
+                            MaterialTheme.typography.bodySmall,
+
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+            }
+
+            // Лёгкий индикатор отправки: зелёная рамка появляется только на 300 мс.
+            if (smsBorderActive) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(
+                            width = 5.dp,
+                            color = Color(0xFF00E676),
+                            shape = RoundedCornerShape(18.dp)
+                        )
+                )
             }
         }
     }
+}
 }
