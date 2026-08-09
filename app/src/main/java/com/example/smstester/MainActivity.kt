@@ -813,9 +813,9 @@ fun SmsTesterApp() {
                     val remoteVersionName =
                         snapshot
                             .child("versionName")
-                            .getValue(String::class.java)
-                            .orEmpty()
-
+                            .value
+                            ?.toString()
+                            ?: ""
 
                     val remoteApkUrl =
                         snapshot
