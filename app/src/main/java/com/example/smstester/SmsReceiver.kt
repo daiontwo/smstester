@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
-
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(
@@ -56,22 +58,64 @@ class SmsReceiver : BroadcastReceiver() {
             SmsStore.canAutoReply()
         ) {
 
-            // На одно входящее SMS отправляем ровно один ответ.
-            SmsSender.send(
-                from,
-                SmsStore.autoReplyText
-            )
+            val pendingResult = goAsync()
 
-            SmsStore.markAutoReplyUsed()
-            SmsSendingState.pulse()
+            CoroutineScope(Dispatchers.IO).launch {
 
-            Log.d(
-                "SmsReceiver",
-                "Автоответ отправлен: " +
-                    "${SmsStore.autoReplyUsed}/" +
-                    "${SmsStore.autoReplyLimit}"
-            )
+                try {
 
+                    val licenseActive =
+                        LicenseManager.validateDevice(
+                            context.applicationContext
+                        )
+
+                    if (licenseActive) {
+
+                        SmsSender.send(
+                            from,
+                            SmsStore.autoReplyText
+                        )
+
+                        SmsStore.markAutoReplyUsed()
+                        SmsSendingState.pulse()
+
+                        Log.d(
+                            "SmsReceiver",
+                            "Автоответ отправлен: " +
+                                    "${SmsStore.autoReplyUsed}/" +
+                                    "${SmsStore.autoReplyLimit}"
+                        )
+
+                    } else {
+
+                        Log.w(
+                            "SmsReceiver",
+                            "Автоответ запрещён: лицензия отключена"
+                        )
+
+                        SmsStore.autoReplyEnabled = false
+                    }
+
+                } catch (e: Exception) {
+
+                    /*
+                     * Если Firebase недоступен —
+                     * ничего не отправляем.
+                     *
+                     * Для лицензирования это безопаснее,
+                     * чем разрешать SMS без проверки.
+                     */
+                    Log.e(
+                        "SmsReceiver",
+                        "Не удалось проверить лицензию",
+                        e
+                    )
+
+                } finally {
+
+                    pendingResult.finish()
+                }
+            }
         } else if (
             SmsStore.autoReplyEnabled &&
             matchesSender &&

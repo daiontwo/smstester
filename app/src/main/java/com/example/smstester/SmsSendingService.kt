@@ -70,6 +70,44 @@ class SmsSendingService : Service() {
             7878
     }
 
+    private var licenseCheckJob: Job? = null
+    private fun startLicenseCheck() {
+
+        licenseCheckJob?.cancel()
+
+        licenseCheckJob = serviceScope.launch {
+
+            while (isActive) {
+
+                delay(60_000)
+
+                val licenseActive =
+                    try {
+                        LicenseManager.validateDevice(
+                            applicationContext
+                        )
+                    } catch (e: Exception) {
+                        // Если просто пропал интернет —
+                        // не останавливаем работу.
+                        true
+                    }
+
+                if (!licenseActive) {
+
+                    Log.w(
+                        "SmsSendingService",
+                        "Лицензия отключена. Останавливаем сервис."
+                    )
+
+                    SmsStore.autoReplyEnabled = false
+
+                    stopSending()
+
+                    break
+                }
+            }
+        }
+    }
     private data class CommonConfig(
         val phone: String,
         val message: String,
@@ -120,6 +158,7 @@ class SmsSendingService : Service() {
                     intent = intent,
                     forceRestartAll = true
                 )
+                startLicenseCheck()
             }
 
             ACTION_UPDATE -> {
@@ -382,7 +421,8 @@ class SmsSendingService : Service() {
     }
 
     private fun stopSending() {
-
+        licenseCheckJob?.cancel()
+        licenseCheckJob = null
         scheduleJobs.values
             .forEach {
                 it.cancel()
@@ -560,7 +600,8 @@ class SmsSendingService : Service() {
     }
 
     override fun onDestroy() {
-
+        licenseCheckJob?.cancel()
+        licenseCheckJob = null
         scheduleJobs.values
             .forEach {
                 it.cancel()

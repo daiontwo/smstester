@@ -18,8 +18,8 @@ android {
         applicationId = "com.antteam.smstester"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildFeatures {
@@ -44,7 +44,9 @@ kotlin {
 
 dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
-
+    implementation("com.google.firebase:firebase-functions")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
     // Firebase Realtime Database
     implementation("com.google.firebase:firebase-database")
     implementation("androidx.datastore:datastore-preferences:1.1.7")

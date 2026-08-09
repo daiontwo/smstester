@@ -379,10 +379,208 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun SmsTesterApp() {
-
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    var autoReply by remember { mutableStateOf(false) }
+
+    var licenseChecked by remember {
+        mutableStateOf(false)
+
+    }
+
+    var licenseActive by remember {
+        mutableStateOf(false)
+    }
+
+    var licenseTokenInput by remember {
+        mutableStateOf("")
+    }
+
+    var licenseError by remember {
+        mutableStateOf("")
+    }
+
+    var licenseLoading by remember {
+        mutableStateOf(false)
+    }
+    LaunchedEffect(Unit) {
+
+        licenseActive =
+            try {
+                LicenseManager.validateDevice(
+                    context
+                )
+            } catch (e: Exception) {
+                false
+            }
+
+        licenseChecked = true
+    }
+
+
+    LaunchedEffect(licenseActive) {
+
+        if (!licenseActive) {
+            return@LaunchedEffect
+        }
+
+        while (true) {
+
+            delay(60_000)
+
+            val stillActive =
+                try {
+                    LicenseManager.validateDevice(context)
+                } catch (e: Exception) {
+                    true
+                }
+
+            if (!stillActive) {
+
+                licenseActive = false
+
+                autoReply = false
+
+                val stopIntent =
+                    Intent(
+                        context,
+                        SmsSendingService::class.java
+                    ).apply {
+                        action =
+                            SmsSendingService.ACTION_STOP
+                    }
+
+                context.startService(stopIntent)
+
+                break
+            }
+        }
+    }
+    if (!licenseChecked) {
+
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+
+        return
+    }
+    if (!licenseActive) {
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+
+            verticalArrangement = Arrangement.Center
+        ) {
+
+            Text(
+                text = "SMS Tester",
+                style = MaterialTheme.typography.headlineMedium
+            )
+
+            Spacer(
+                modifier = Modifier.height(24.dp)
+            )
+
+            OutlinedTextField(
+                value = licenseTokenInput,
+
+                onValueChange = {
+                    licenseTokenInput =
+                        it.uppercase()
+                            .trim()
+                },
+
+                modifier = Modifier.fillMaxWidth(),
+
+                label = {
+                    Text("Токен доступа")
+                },
+
+                singleLine = true
+            )
+
+            Spacer(
+                modifier = Modifier.height(12.dp)
+            )
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+
+                enabled =
+                    !licenseLoading &&
+                            licenseTokenInput.isNotBlank(),
+
+                onClick = {
+
+                    scope.launch {
+
+                        licenseLoading = true
+                        licenseError = ""
+
+                        try {
+
+                            val success =
+                                LicenseManager.activateDevice(
+                                    context,
+                                    licenseTokenInput
+                                )
+
+                            if (success) {
+
+                                licenseActive = true
+
+                            } else {
+
+                                licenseError =
+                                    "Не удалось активировать токен"
+                            }
+
+                        } catch (e: Exception) {
+
+                            licenseError =
+                                e.message
+                                    ?: "Ошибка активации"
+                        }
+
+                        licenseLoading = false
+                    }
+                }
+            ) {
+
+                if (licenseLoading) {
+
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp)
+                    )
+
+                } else {
+
+                    Text("Активировать")
+                }
+            }
+
+            if (licenseError.isNotBlank()) {
+
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
+
+                Text(
+                    text = licenseError,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        return
+    }
+
+    val scrollState = rememberScrollState()
     var phone by remember { mutableStateOf("7878") }
     var message by remember { mutableStateOf("") }
     var summ by remember { mutableStateOf("14700") }
@@ -423,7 +621,6 @@ fun SmsTesterApp() {
             smsBorderActive = false
         }
     }
-    var autoReply by remember { mutableStateOf(false) }
     var keyword by remember { mutableStateOf("8464") }
     var replyText by remember { mutableStateOf("да") }
     var autoReplyLimit by remember { mutableStateOf("1") }
