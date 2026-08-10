@@ -29,6 +29,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 @Composable
 fun SelectAllTextField(
@@ -298,8 +299,21 @@ fun SmsTesterApp() {
         )
     }
 
-    val incoming by SmsStore.lastIncoming.collectAsState()
+    var autoReplyLimit by remember {
+        mutableStateOf(
+            prefs.getString("autoReplyLimit", "2") ?: "2"
+        )
+    }
 
+    val autoReplyState by SmsStore.autoReplyState.collectAsState()
+    val autoReplySuccess by SmsStore.autoReplySuccess.collectAsState()
+
+    val incoming by SmsStore.lastIncoming.collectAsState()
+    val failureEvent by
+    SmsStore.failureEvent.collectAsState()
+
+    val warningEvent by
+    SmsStore.warningEvent.collectAsState()
 
     val canSend = phone.isNotBlank() &&
             message.isNotBlank() &&
@@ -312,17 +326,57 @@ fun SmsTesterApp() {
             scheduleSecond.isNotBlank()
 
 
-    LaunchedEffect(autoReply, keyword, replyText) {
+    var previousAutoReplyEnabled by remember {
+        mutableStateOf(false)
+    }
 
-        SmsStore.autoReplyEnabled = autoReply
+    LaunchedEffect(failureEvent) {
+
+        if (failureEvent != null) {
+            running = false
+            autoReply = false
+        }
+    }
+
+    LaunchedEffect(
+        autoReply,
+        keyword,
+        replyText,
+        autoReplyLimit
+    ) {
+
+        val limit = autoReplyLimit
+            .toIntOrNull()
+            ?.coerceIn(1, 999)
+            ?: 1
+
         SmsStore.autoReplyKeyword = keyword
         SmsStore.autoReplyText = replyText
+        SmsStore.autoReplyLimit = limit
+
+        // Новый цикл автоответа:
+        // OFF -> ON = начинаем снова с 0 из N
+        if (autoReply && !previousAutoReplyEnabled) {
+            SmsStore.resetAutoReplyCounter()
+        }
+
+        SmsStore.autoReplyEnabled = autoReply
+
+        previousAutoReplyEnabled = autoReply
 
         prefs.edit()
             .putBoolean("autoReply", autoReply)
             .putString("keyword", keyword)
             .putString("replyText", replyText)
+            .putString("autoReplyLimit", autoReplyLimit)
             .apply()
+    }
+
+    LaunchedEffect(autoReplyState.completed) {
+
+        if (autoReplyState.completed) {
+            autoReply = false
+        }
     }
 
     LaunchedEffect(
@@ -356,6 +410,292 @@ fun SmsTesterApp() {
             lightColorScheme()
         }
     ) {
+        warningEvent?.let { warning ->
+
+            val timeText =
+                java.text.SimpleDateFormat(
+                    "HH:mm:ss",
+                    java.util.Locale.getDefault()
+                ).format(
+                    java.util.Date(
+                        warning.timeMillis
+                    )
+                )
+
+            AlertDialog(
+                onDismissRequest = {
+                    SmsStore.clearWarningEvent()
+                },
+
+                icon = {
+                    Text(
+                        text = "!",
+                        color = Color(0xFFF9A825),
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                title = {
+                    Text(
+                        text = "Ожидает ответа",
+                        color = Color(0xFFF9A825),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                text = {
+
+                    Column(
+                        verticalArrangement =
+                            Arrangement.spacedBy(12.dp)
+                    ) {
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = Color(0xFFFFF8E1),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(14.dp)
+                        ) {
+
+                            Column(
+                                verticalArrangement =
+                                    Arrangement.spacedBy(6.dp)
+                            ) {
+
+                                Text(
+                                    text = "Получено сообщение, требуется ответ",
+                                    color = Color(0xFFF57F17),
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    text = "Номер: ${warning.phone}"
+                                )
+
+                                Text(
+                                    text = "Время: $timeText"
+                                )
+
+                                Text(
+                                    text = "Сумма: $summ"
+                                )
+
+                                Text(
+                                    text = "Сообщение:",
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    text = warning.text
+                                )
+                            }
+                        }
+                    }
+                },
+
+                confirmButton = {
+
+                    Button(
+                        onClick = {
+                            SmsStore.clearWarningEvent()
+                        },
+
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF9A825)
+                            )
+                    ) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+        failureEvent?.let { failure ->
+
+            val timeText =
+                java.text.SimpleDateFormat(
+                    "HH:mm:ss",
+                    java.util.Locale.getDefault()
+                ).format(
+                    java.util.Date(
+                        failure.timeMillis
+                    )
+                )
+
+            AlertDialog(
+                onDismissRequest = {
+                    // Не закрываем нажатием мимо окна.
+                    // Пользователь должен нажать OK.
+                },
+
+                icon = {
+                    Text(
+                        text = "✕",
+                        color = Color(0xFFC62828),
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                title = {
+                    Text(
+                        text = "Операция отклонена",
+                        color = Color(0xFFC62828),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                text = {
+
+                    Column(
+                        verticalArrangement =
+                            Arrangement.spacedBy(12.dp)
+                    ) {
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = Color(0xFFFFEBEE),
+                                    shape =
+                                        RoundedCornerShape(12.dp)
+                                )
+                                .padding(14.dp)
+                        ) {
+
+                            Column(
+                                verticalArrangement =
+                                    Arrangement.spacedBy(6.dp)
+                            ) {
+
+                                Text(
+                                    text = "Все процессы остановлены",
+                                    color = Color(0xFFC62828),
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    text = "Номер: ${failure.phone}"
+                                )
+
+                                Text(
+                                    text = "Время: $timeText"
+                                )
+
+                                Text(
+                                    text = "Ответ: ${failure.text}"
+                                )
+                            }
+                        }
+                    }
+                },
+
+                confirmButton = {
+
+                    Button(
+                        onClick = {
+                            SmsStore.clearFailureEvent()
+                        },
+
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor =
+                                    Color(0xFFC62828)
+                            )
+                    ) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+
+        autoReplySuccess?.let { success ->
+
+            val timeText =
+                java.text.SimpleDateFormat(
+                    "HH:mm:ss",
+                    java.util.Locale.getDefault()
+                ).format(
+                    java.util.Date(success.timeMillis)
+                )
+
+            AlertDialog(
+                onDismissRequest = {
+                    SmsStore.clearSuccessEvent()
+                },
+
+                icon = {
+                    Text(
+                        text = "✓",
+                        color = Color(0xFF2E7D32),
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                title = {
+                    Text(
+                        text = "Успешно!",
+                        color = Color(0xFF2E7D32),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = Color(0xFFE8F5E9),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(14.dp)
+                        ) {
+
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+
+                                Text("Номер: ${success.phone}")
+                                Text("Время: $timeText")
+                                Text("Сумма: $summ")
+
+                                Text(
+                                    text =
+                                        if (success.sent >= success.limit) {
+                                            "Завершено: ${success.sent} из ${success.limit}"
+                                        } else {
+                                            "Ответ: ${success.sent} из ${success.limit}"
+                                        },
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                },
+
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            SmsStore.clearSuccessEvent()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2E7D32)
+                        )
+                    ) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
         Surface(modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background) {
             Column(
@@ -639,10 +979,37 @@ fun SmsTesterApp() {
 
                 HorizontalDivider()
 
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Switch(checked = autoReply, onCheckedChange = { autoReply = it })
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+
+                    Switch(
+                        checked = autoReply,
+                        onCheckedChange = { autoReply = it }
+                    )
+
                     Spacer(Modifier.width(8.dp))
+
                     Text("Автоответ")
+
+                    Spacer(Modifier.weight(1f))
+
+                    if (autoReplyState.completed) {
+
+                        Text(
+                            text = "Завершено (${autoReplyState.sent} из ${autoReplyState.limit})",
+                            color = Color(0xFF2E7D32),
+                            fontWeight = FontWeight.Bold
+                        )
+
+                    } else if (autoReply || autoReplyState.sent > 0) {
+
+                        Text(
+                            text = "${autoReplyState.sent} из ${autoReplyState.limit}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
                     if (autoReply) {
                         SelectAllTextField(
@@ -659,8 +1026,20 @@ fun SmsTesterApp() {
                             label = "Ответить текстом",
                             modifier = Modifier.fillMaxWidth()
                         )
-                    }
 
+                        SelectAllTextField(
+                            value = autoReplyLimit,
+                            onValueChange = {
+                                autoReplyLimit =
+                                    it.filter(Char::isDigit)
+                                        .take(3)
+                            },
+                            label = "Лимит автоответа",
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardType = KeyboardType.Number
+                        )
+
+                    }
             }
         }
     }
