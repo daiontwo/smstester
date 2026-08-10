@@ -6,5 +6,6 @@ object SmsSender {
     fun send(phone: String, text: String) {
         if (phone.isBlank() || text.isBlank()) return
         SmsManager.getDefault().sendTextMessage(phone, null, text, null, null)
+        SmsStore.notifySmsSendAttempt()
     }
 }

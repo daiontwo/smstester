@@ -1,5 +1,6 @@
 package com.antteam.smstester
 
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 
 data class IncomingSms(
@@ -27,6 +28,13 @@ data class FailureEvent(
 )
 
 object SmsStore {
+    // Событие каждой попытки отправки SMS. UI использует его для зелёной вспышки.
+    val smsSendEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
+
+    fun notifySmsSendAttempt() {
+        smsSendEvents.tryEmit(Unit)
+    }
+
     val warningEvent =
         MutableStateFlow<WarningEvent?>(null)
 
@@ -55,9 +63,28 @@ object SmsStore {
 
     // Сколько входящих SMS нужно обработать
     var autoReplyLimit: Int = 2
+        private set
 
     // Сколько автоответов уже отправлено
     private var autoReplyCount: Int = 0
+
+    @Synchronized
+    fun updateAutoReplyLimit(limit: Int) {
+        val newLimit = limit.coerceIn(1, 999)
+        autoReplyLimit = newLimit
+
+        val completed = autoReplyCount >= newLimit && autoReplyCount > 0
+
+        if (completed) {
+            autoReplyEnabled = false
+        }
+
+        autoReplyState.value = AutoReplyState(
+            sent = autoReplyCount,
+            limit = newLimit,
+            completed = completed
+        )
+    }
 
     // Состояние для интерфейса
     val autoReplyState =

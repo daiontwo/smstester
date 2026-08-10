@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,8 +30,14 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 @Composable
 fun SelectAllTextField(
     value: String,
@@ -42,6 +49,10 @@ fun SelectAllTextField(
     var fieldValue by remember {
         mutableStateOf(TextFieldValue(value))
     }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val scope = rememberCoroutineScope()
+    var focusJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(value) {
         fieldValue = fieldValue.copy(
@@ -55,6 +66,15 @@ fun SelectAllTextField(
         onValueChange = {
             fieldValue = it
             onValueChange(it.text)
+
+            // Каждый новый ввод отменяет предыдущий отсчёт.
+            // Фокус снимается только если пользователь ничего не печатает 7 секунд.
+            focusJob?.cancel()
+            focusJob = scope.launch {
+                delay(7_000)
+                focusManager.clearFocus(force = true)
+                keyboardController?.hide()
+            }
         },
         label = { Text(label) },
         modifier = modifier.onFocusChanged { focus ->
@@ -66,6 +86,11 @@ fun SelectAllTextField(
                         fieldValue.text.length
                     )
                 )
+            } else {
+                // Если пользователь сам ушёл в другое поле,
+                // старый таймер не должен снять фокус уже с нового поля.
+                focusJob?.cancel()
+                focusJob = null
             }
 
         },
@@ -74,6 +99,106 @@ fun SelectAllTextField(
         )
     )
 }
+
+@Composable
+fun ScheduleBlock(
+    index: Int,
+    schedule: ScheduleConfig,
+    delayInMs: Boolean,
+    canDelete: Boolean,
+    onChange: (ScheduleConfig) -> Unit,
+    onDelete: () -> Unit
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (index == 0) "Основное расписание" else "Расписание ${index + 1}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val minute = schedule.minute.padStart(2, '0')
+                    val second = schedule.second.padStart(2, '0')
+                    Text(
+                        text = "Каждый час в $minute:$second",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (canDelete) {
+                    TextButton(onClick = onDelete) {
+                        Text("Удалить", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SelectAllTextField(
+                    value = schedule.minute,
+                    onValueChange = { value ->
+                        onChange(schedule.copy(minute = value.filter(Char::isDigit).take(2)))
+                    },
+                    label = "Минута",
+                    modifier = Modifier.weight(1f),
+                    keyboardType = KeyboardType.Number
+                )
+                SelectAllTextField(
+                    value = schedule.second,
+                    onValueChange = { value ->
+                        onChange(schedule.copy(second = value.filter(Char::isDigit).take(2)))
+                    },
+                    label = "Секунда",
+                    modifier = Modifier.weight(1f),
+                    keyboardType = KeyboardType.Number
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SelectAllTextField(
+                    value = schedule.interval,
+                    onValueChange = { value ->
+                        onChange(schedule.copy(interval = value.filter(Char::isDigit)))
+                    },
+                    label = if (delayInMs) "Интервал мс" else "Интервал сек",
+                    modifier = Modifier.weight(1f),
+                    keyboardType = KeyboardType.Number
+                )
+                SelectAllTextField(
+                    value = schedule.count,
+                    onValueChange = { value ->
+                        onChange(schedule.copy(count = value.filter(Char::isDigit)))
+                    },
+                    label = "Кол-во",
+                    modifier = Modifier.weight(1f),
+                    keyboardType = KeyboardType.Number
+                )
+            }
+
+            if (!schedule.isValidSchedule()) {
+                Text(
+                    text = "Проверь значения: минута/секунда 0–59, количество от 1.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
 
     private val permissionsLauncher =
@@ -217,6 +342,16 @@ class MainActivity : ComponentActivity() {
 
 fun SmsTesterApp() {
     val context = LocalContext.current
+    var sendFlashVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        SmsStore.smsSendEvents.collect {
+            sendFlashVisible = true
+            delay(180)
+            sendFlashVisible = false
+            delay(80)
+        }
+    }
     val prefs = remember {
         context.getSharedPreferences(
             "sms_tester_prefs",
@@ -235,9 +370,19 @@ fun SmsTesterApp() {
         )
     }
 
-    var sendLimitText by remember {
+    var schedules by remember {
+        val saved = schedulesFromJson(prefs.getString("schedulesJson", null))
         mutableStateOf(
-            prefs.getString("sendLimitText", "5") ?: "5"
+            if (saved.isNotEmpty()) saved
+            else listOf(
+                ScheduleConfig(
+                    id = 1L,
+                    minute = prefs.getString("scheduleMinute", "59") ?: "59",
+                    second = prefs.getString("scheduleSecond", "52") ?: "52",
+                    interval = prefs.getString("smsDelayValue", "1") ?: "1",
+                    count = prefs.getString("sendLimitText", "5") ?: "5"
+                )
+            )
         )
     }
 
@@ -250,24 +395,6 @@ fun SmsTesterApp() {
     var darkTheme by remember {
         mutableStateOf(
             prefs.getBoolean("darkTheme", false)
-        )
-    }
-
-    var scheduleMinute by remember {
-        mutableStateOf(
-            prefs.getString("scheduleMinute", "59") ?: "59"
-        )
-    }
-
-    var scheduleSecond by remember {
-        mutableStateOf(
-            prefs.getString("scheduleSecond", "52") ?: "52"
-        )
-    }
-
-    var smsDelayValue by remember {
-        mutableStateOf(
-            prefs.getString("smsDelayValue", "1") ?: "1"
         )
     }
 
@@ -320,10 +447,8 @@ fun SmsTesterApp() {
             summ.isNotBlank()
 
     val canStart = canSend &&
-            sendLimitText.isNotBlank() &&
-            smsDelayValue.isNotBlank() &&
-            scheduleMinute.isNotBlank() &&
-            scheduleSecond.isNotBlank()
+            schedules.isNotEmpty() &&
+            schedules.all { it.isValidSchedule() }
 
 
     var previousAutoReplyEnabled by remember {
@@ -348,11 +473,12 @@ fun SmsTesterApp() {
         val limit = autoReplyLimit
             .toIntOrNull()
             ?.coerceIn(1, 999)
-            ?: 1
 
         SmsStore.autoReplyKeyword = keyword
         SmsStore.autoReplyText = replyText
-        SmsStore.autoReplyLimit = limit
+        if (limit != null) {
+            SmsStore.updateAutoReplyLimit(limit)
+        }
 
         // Новый цикл автоответа:
         // OFF -> ON = начинаем снова с 0 из N
@@ -382,25 +508,43 @@ fun SmsTesterApp() {
     LaunchedEffect(
         phone,
         message,
-        sendLimitText,
         summ,
         darkTheme,
-        scheduleMinute,
-        scheduleSecond,
-        smsDelayValue,
+        schedules,
         delayInMs
     ) {
         prefs.edit()
             .putString("phone", phone)
             .putString("message", message)
-            .putString("sendLimitText", sendLimitText)
             .putString("summ", summ)
             .putBoolean("darkTheme", darkTheme)
-            .putString("scheduleMinute", scheduleMinute)
-            .putString("scheduleSecond", scheduleSecond)
-            .putString("smsDelayValue", smsDelayValue)
+            .putString("schedulesJson", schedulesToJson(schedules))
             .putBoolean("delayInMs", delayInMs)
             .apply()
+    }
+
+    // Если автоматическая отправка уже включена, изменения расписаний
+    // автоматически применяются к сервису без Stop -> Start.
+    LaunchedEffect(
+        phone,
+        message,
+        summ,
+        schedules,
+        delayInMs,
+        running
+    ) {
+        if (running && canStart) {
+            delay(400)
+            val updateIntent = Intent(context, SmsSendingService::class.java).apply {
+                action = SmsSendingService.ACTION_UPDATE
+                putExtra(SmsSendingService.EXTRA_PHONE, phone)
+                putExtra(SmsSendingService.EXTRA_MESSAGE, message)
+                putExtra(SmsSendingService.EXTRA_SUM, summ)
+                putExtra(SmsSendingService.EXTRA_SCHEDULES_JSON, schedulesToJson(schedules))
+                putExtra(SmsSendingService.EXTRA_DELAY_IN_MS, delayInMs)
+            }
+            context.startService(updateIntent)
+        }
     }
 
     MaterialTheme(
@@ -696,8 +840,18 @@ fun SmsTesterApp() {
                 }
             )
         }
-        Surface(modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (sendFlashVisible) {
+                        Modifier.border(4.dp, Color(0xFF4CAF50))
+                    } else {
+                        Modifier
+                    }
+                ),
+            color = MaterialTheme.colorScheme.background
+        ) {
             Column(
                 Modifier
                     .padding(20.dp, 50.dp , 20.dp , 70.dp).fillMaxHeight().verticalScroll(rememberScrollState())
@@ -767,56 +921,41 @@ fun SmsTesterApp() {
                 }
 
 
-                // Минута запуска и секунда
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-
-
-                    Spacer(Modifier.width(8.dp))
-
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),) {
-                    SelectAllTextField(
-                        value = scheduleMinute,
-                        onValueChange = { scheduleMinute = it.filter(Char::isDigit) },
-                        label = "Минута запуска",
-                        modifier = Modifier.weight(1f),
-                        keyboardType = KeyboardType.Phone,)
-
-                    SelectAllTextField(
-                        value = scheduleSecond,
-                        onValueChange = { scheduleSecond = it.filter(Char::isDigit) },
-                        label = "Секунда запуска",
-                        modifier = Modifier.weight(1f),
-                        keyboardType = KeyboardType.Phone,)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-
-                    SelectAllTextField(
-                        value = smsDelayValue,
-                        onValueChange = {
-                            smsDelayValue = it.filter(Char::isDigit)
+                // Независимые расписания
+                schedules.forEachIndexed { index, schedule ->
+                    ScheduleBlock(
+                        index = index,
+                        schedule = schedule,
+                        delayInMs = delayInMs,
+                        canDelete = index != 0,
+                        onChange = { updated ->
+                            schedules = schedules.map { current ->
+                                if (current.id == updated.id) updated else current
+                            }
                         },
-                        label = if (delayInMs) "Интервал мс" else "Интервал сек",
-                        modifier = Modifier.weight(1f),
-                        keyboardType = KeyboardType.Number
+                        onDelete = {
+                            if (index != 0) {
+                                schedules = schedules.filterNot { it.id == schedule.id }
+                            }
+                        }
                     )
+                }
 
-                    SelectAllTextField(
-                        value = sendLimitText,
-                        onValueChange = {
-                            sendLimitText = it.filter(Char::isDigit)
-                        },
-                        label = "Количество отправок",
-                        modifier = Modifier.weight(1f),
-                        keyboardType = KeyboardType.Number
+                if (schedules.size < MAX_SCHEDULES) {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            val nextId = (schedules.maxOfOrNull { it.id } ?: 0L) + 1L
+                            schedules = schedules + ScheduleConfig(id = nextId)
+                        }
+                    ) {
+                        Text("+ Добавить расписание")
+                    }
+                } else {
+                    Text(
+                        text = "Максимум: $MAX_SCHEDULES расписаний",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
 
@@ -825,28 +964,14 @@ fun SmsTesterApp() {
                 ) {
                     Switch(
                         checked = delayInMs,
-
-                        onCheckedChange = {
-                            delayInMs = it
-                        }
+                        onCheckedChange = { delayInMs = it }
                     )
                     Text(
                         modifier = Modifier.padding(10.dp),
-                        text = if (delayInMs) "миллисекунды" else "секунды",
-                        color = Color(0xFF666666),
+                        text = if (delayInMs) "Интервал в миллисекундах" else "Интервал в секундах",
+                        color = Color(0xFF666666)
                     )
-
                 }
-
-                Text(
-                    text =
-                        "Каждый час в $scheduleMinute минут $scheduleSecond секунд\n" +
-                        "Отправок: $sendLimitText\n" +
-                        "Интервал: $smsDelayValue ${if(delayInMs) "мс" else "сек"}",
-                    color = Color(0xFF666666),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -854,76 +979,23 @@ fun SmsTesterApp() {
                         enabled = canStart || running,
                         onClick = {
                             if (!running) {
-
-                                val minute = scheduleMinute.toIntOrNull()
-                                val second = scheduleSecond.toIntOrNull()
-                                val limit = sendLimitText.toIntOrNull()
-                                val delayValue = smsDelayValue.toLongOrNull()
-
-                                if (
-                                    minute != null &&
-                                    minute in 0..59 &&
-                                    second != null &&
-                                    second in 0..59 &&
-                                    limit != null &&
-                                    limit > 0 &&
-                                    delayValue != null &&
-                                    delayValue >= 0
-                                ) {
-
+                                if (canStart) {
                                     val serviceIntent = Intent(
                                         context,
                                         SmsSendingService::class.java
                                     ).apply {
-
                                         action = SmsSendingService.ACTION_START
-
+                                        putExtra(SmsSendingService.EXTRA_PHONE, phone)
+                                        putExtra(SmsSendingService.EXTRA_MESSAGE, message)
+                                        putExtra(SmsSendingService.EXTRA_SUM, summ)
                                         putExtra(
-                                            SmsSendingService.EXTRA_PHONE,
-                                            phone
+                                            SmsSendingService.EXTRA_SCHEDULES_JSON,
+                                            schedulesToJson(schedules)
                                         )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_MESSAGE,
-                                            message
-                                        )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_SUM,
-                                            summ
-                                        )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_MINUTE,
-                                            minute
-                                        )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_SECOND,
-                                            second
-                                        )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_LIMIT,
-                                            limit
-                                        )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_DELAY,
-                                            delayValue
-                                        )
-
-                                        putExtra(
-                                            SmsSendingService.EXTRA_DELAY_IN_MS,
-                                            delayInMs
-                                        )
+                                        putExtra(SmsSendingService.EXTRA_DELAY_IN_MS, delayInMs)
                                     }
 
-                                    ContextCompat.startForegroundService(
-                                        context,
-                                        serviceIntent
-                                    )
-
+                                    ContextCompat.startForegroundService(context, serviceIntent)
                                     running = true
                                 }
 
