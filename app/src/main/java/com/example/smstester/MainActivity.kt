@@ -3,7 +3,6 @@ package com.antteam.smstester
 import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -19,15 +18,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
+import android.app.AlarmManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 @Composable
 fun SelectAllTextField(
     value: String,
@@ -72,37 +74,232 @@ fun SelectAllTextField(
     )
 }
 class MainActivity : ComponentActivity() {
+
+    private val permissionsLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) {
+            checkBatteryOptimization()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { SmsTesterApp() }
+
+        setContent {
+            SmsTesterApp()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        requestRequiredPermissions()
+    }
+
+    private fun requestRequiredPermissions() {
+
+        val permissions = mutableListOf<String>()
+
+        if (
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SEND_SMS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.SEND_SMS)
+        }
+
+        if (
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECEIVE_SMS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.RECEIVE_SMS)
+        }
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        if (permissions.isNotEmpty()) {
+            permissionsLauncher.launch(permissions.toTypedArray())
+        } else {
+            checkBatteryOptimization()
+        }
+    }
+
+    private fun checkBatteryOptimization() {
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return
+        }
+
+        val powerManager =
+            getSystemService(POWER_SERVICE) as PowerManager
+
+        if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+
+            try {
+
+                val intent =
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                    ).apply {
+                        data =
+                            Uri.parse(
+                                "package:$packageName"
+                            )
+                    }
+
+                startActivity(intent)
+
+            } catch (_: Exception) {
+
+                startActivity(
+                    Intent(
+                        Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                    )
+                )
+            }
+
+        } else {
+
+            checkExactAlarmPermission()
+        }
+        return
+    }
+    private fun checkExactAlarmPermission() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+
+            val alarmManager =
+                getSystemService(
+                    ALARM_SERVICE
+                ) as AlarmManager
+
+            if (!alarmManager.canScheduleExactAlarms()) {
+
+                try {
+                    val intent =
+                        Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+                        ).apply {
+                            data =
+                                Uri.parse(
+                                    "package:$packageName"
+                                )
+                        }
+
+                    startActivity(intent)
+
+                } catch (_: Exception) {
+
+                    val intent =
+                        Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+                        )
+
+                    startActivity(intent)
+                }
+            }
+        }
     }
 }
 
 @Composable
 
 fun SmsTesterApp() {
-    val scope = rememberCoroutineScope()
-    var phone by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
-    var sendLimitText by remember { mutableStateOf("5") }
-    var summ by remember { mutableStateOf("14700") }
-    var darkTheme by remember { mutableStateOf(false) }
-    var scheduleMinute by remember { mutableStateOf("59") }
-    var scheduleSecond by remember { mutableStateOf("52") }
-    var smsDelayValue by remember { mutableStateOf("1") }
-    var delayInMs by remember { mutableStateOf(false) }
-    var running by remember { mutableStateOf(false) }
-    var sendJob by remember { mutableStateOf<Job?>(null) }
+    val context = LocalContext.current
+    val prefs = remember {
+        context.getSharedPreferences(
+            "sms_tester_prefs",
+            android.content.Context.MODE_PRIVATE
+        )
+    }
+    var phone by remember {
+        mutableStateOf(
+            prefs.getString("phone", "7878") ?: "7878"
+        )
+    }
 
-    var autoReply by remember { mutableStateOf(false) }
-    var keyword by remember { mutableStateOf("8464") }
-    var replyText by remember { mutableStateOf("да") }
+    var message by remember {
+        mutableStateOf(
+            prefs.getString("message", "") ?: ""
+        )
+    }
+
+    var sendLimitText by remember {
+        mutableStateOf(
+            prefs.getString("sendLimitText", "5") ?: "5"
+        )
+    }
+
+    var summ by remember {
+        mutableStateOf(
+            prefs.getString("summ", "14700") ?: "14700"
+        )
+    }
+
+    var darkTheme by remember {
+        mutableStateOf(
+            prefs.getBoolean("darkTheme", false)
+        )
+    }
+
+    var scheduleMinute by remember {
+        mutableStateOf(
+            prefs.getString("scheduleMinute", "59") ?: "59"
+        )
+    }
+
+    var scheduleSecond by remember {
+        mutableStateOf(
+            prefs.getString("scheduleSecond", "52") ?: "52"
+        )
+    }
+
+    var smsDelayValue by remember {
+        mutableStateOf(
+            prefs.getString("smsDelayValue", "1") ?: "1"
+        )
+    }
+
+    var delayInMs by remember {
+        mutableStateOf(
+            prefs.getBoolean("delayInMs", false)
+        )
+    }
+    var running by remember {
+        mutableStateOf(
+            SmsSendingService.isRunning(context)
+        )
+    }
+    var autoReply by remember {
+        mutableStateOf(
+            prefs.getBoolean("autoReply", false)
+        )
+    }
+
+    var keyword by remember {
+        mutableStateOf(
+            prefs.getString("keyword", "8464") ?: "8464"
+        )
+    }
+
+    var replyText by remember {
+        mutableStateOf(
+            prefs.getString("replyText", "да") ?: "да"
+        )
+    }
 
     val incoming by SmsStore.lastIncoming.collectAsState()
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
 
     val canSend = phone.isNotBlank() &&
             message.isNotBlank() &&
@@ -114,38 +311,42 @@ fun SmsTesterApp() {
             scheduleMinute.isNotBlank() &&
             scheduleSecond.isNotBlank()
 
-    var lastConfig by remember { mutableStateOf("") }
-
-    val currentConfig =
-        "$phone|$message|$summ|$scheduleMinute|$scheduleSecond|$smsDelayValue|$delayInMs|$sendLimitText"
-
-
-    LaunchedEffect(currentConfig) {
-
-        if (running && lastConfig.isNotEmpty() && currentConfig != lastConfig) {
-
-            sendJob?.cancel()
-            sendJob = null
-            running = false
-        }
-
-        lastConfig = currentConfig
-    }
-
-
-    LaunchedEffect(Unit) {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.RECEIVE_SMS
-            )
-        )
-    }
 
     LaunchedEffect(autoReply, keyword, replyText) {
+
         SmsStore.autoReplyEnabled = autoReply
         SmsStore.autoReplyKeyword = keyword
         SmsStore.autoReplyText = replyText
+
+        prefs.edit()
+            .putBoolean("autoReply", autoReply)
+            .putString("keyword", keyword)
+            .putString("replyText", replyText)
+            .apply()
+    }
+
+    LaunchedEffect(
+        phone,
+        message,
+        sendLimitText,
+        summ,
+        darkTheme,
+        scheduleMinute,
+        scheduleSecond,
+        smsDelayValue,
+        delayInMs
+    ) {
+        prefs.edit()
+            .putString("phone", phone)
+            .putString("message", message)
+            .putString("sendLimitText", sendLimitText)
+            .putString("summ", summ)
+            .putBoolean("darkTheme", darkTheme)
+            .putString("scheduleMinute", scheduleMinute)
+            .putString("scheduleSecond", scheduleSecond)
+            .putString("smsDelayValue", smsDelayValue)
+            .putBoolean("delayInMs", delayInMs)
+            .apply()
     }
 
     MaterialTheme(
@@ -313,58 +514,90 @@ fun SmsTesterApp() {
                         enabled = canStart || running,
                         onClick = {
                             if (!running) {
-                                running = true
-                                sendJob = scope.launch {
 
-                                    val minute = scheduleMinute.toIntOrNull() ?: 59
-                                    val second = scheduleSecond.toIntOrNull() ?: 50
-                                    val limit = sendLimitText.toIntOrNull() ?: 5
+                                val minute = scheduleMinute.toIntOrNull()
+                                val second = scheduleSecond.toIntOrNull()
+                                val limit = sendLimitText.toIntOrNull()
+                                val delayValue = smsDelayValue.toLongOrNull()
 
-                                    while (isActive) {
+                                if (
+                                    minute != null &&
+                                    minute in 0..59 &&
+                                    second != null &&
+                                    second in 0..59 &&
+                                    limit != null &&
+                                    limit > 0 &&
+                                    delayValue != null &&
+                                    delayValue >= 0
+                                ) {
 
-                                        val now = LocalDateTime.now()
+                                    val serviceIntent = Intent(
+                                        context,
+                                        SmsSendingService::class.java
+                                    ).apply {
 
-                                        var next = now
-                                            .withMinute(minute)
-                                            .withSecond(second)
-                                            .withNano(0)
+                                        action = SmsSendingService.ACTION_START
 
-                                        // если время уже прошло — ждём следующий час
-                                        if (!next.isAfter(now)) {
-                                            next = next.plusHours(1)
-                                        }
+                                        putExtra(
+                                            SmsSendingService.EXTRA_PHONE,
+                                            phone
+                                        )
 
-                                        val waitMillis = ChronoUnit.MILLIS.between(now, next)
+                                        putExtra(
+                                            SmsSendingService.EXTRA_MESSAGE,
+                                            message
+                                        )
 
-                                        delay(waitMillis)
+                                        putExtra(
+                                            SmsSendingService.EXTRA_SUM,
+                                            summ
+                                        )
 
+                                        putExtra(
+                                            SmsSendingService.EXTRA_MINUTE,
+                                            minute
+                                        )
 
-                                        // отправляем пачку SMS
-                                        val smsDelay = smsDelayValue.toLongOrNull() ?: 1L
+                                        putExtra(
+                                            SmsSendingService.EXTRA_SECOND,
+                                            second
+                                        )
 
-                                        val delayMillis = if (delayInMs) {
-                                            smsDelay
-                                        } else {
-                                            smsDelay * 1000
-                                        }
+                                        putExtra(
+                                            SmsSendingService.EXTRA_LIMIT,
+                                            limit
+                                        )
 
-                                        repeat(limit) {
+                                        putExtra(
+                                            SmsSendingService.EXTRA_DELAY,
+                                            delayValue
+                                        )
 
-                                            SmsSender.send(
-                                                phone,
-                                                "$message $summ"
-                                            )
-
-                                            delay(delayMillis)
-                                        }
-
-                                        running = false
-                                        sendJob = null
+                                        putExtra(
+                                            SmsSendingService.EXTRA_DELAY_IN_MS,
+                                            delayInMs
+                                        )
                                     }
+
+                                    ContextCompat.startForegroundService(
+                                        context,
+                                        serviceIntent
+                                    )
+
+                                    running = true
                                 }
+
                             } else {
-                                sendJob?.cancel()
-                                sendJob = null
+
+                                val serviceIntent = Intent(
+                                    context,
+                                    SmsSendingService::class.java
+                                ).apply {
+                                    action = SmsSendingService.ACTION_STOP
+                                }
+
+                                context.startService(serviceIntent)
+
                                 running = false
                             }
                         },
