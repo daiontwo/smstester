@@ -342,6 +342,13 @@ class MainActivity : ComponentActivity() {
 
 fun SmsTesterApp() {
     val context = LocalContext.current
+
+    val deviceId = remember {
+        Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ANDROID_ID
+        ).orEmpty()
+    }
     var sendFlashVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -1105,6 +1112,15 @@ fun SmsTesterApp() {
                         )
 
                     }
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    text = "ID устройства: $deviceId",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
