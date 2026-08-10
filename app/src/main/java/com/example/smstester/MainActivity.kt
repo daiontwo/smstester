@@ -952,10 +952,6 @@ fun SmsTesterApp() {
                     }
                 }
 
-                HorizontalDivider()
-
-                Text("Последнее входящее SMS")
-
                 if (incoming.from == "8464") {
                     Box(
                         modifier = Modifier
@@ -973,9 +969,6 @@ fun SmsTesterApp() {
                         )
                     }
                 }
-
-                Text("От: ${incoming.from.ifBlank { "—" }}")
-                Text("Текст: ${incoming.text.ifBlank { "—" }}")
 
                 HorizontalDivider()
 
