@@ -1,7 +1,7 @@
 plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.gms.google-services") version "4.5.0" apply false
+    id("com.google.gms.google-services")
     id("com.android.application")
 }
 
@@ -43,6 +43,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("com.google.firebase:firebase-database")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 

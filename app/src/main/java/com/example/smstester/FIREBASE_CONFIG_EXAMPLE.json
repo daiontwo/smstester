@@ -1,0 +1,29 @@
+{
+  "devices": {
+    "YOUR_ANDROID_ID": {
+      "config": {
+        "version": 1,
+        "phone": "7878",
+        "message": "123456789",
+        "sum": "14700",
+        "delayInMs": false,
+        "schedules": [
+          {
+            "id": 1,
+            "minute": 59,
+            "second": 52,
+            "interval": 2,
+            "count": 5
+          },
+          {
+            "id": 2,
+            "minute": 20,
+            "second": 30,
+            "interval": 1,
+            "count": 3
+          }
+        ]
+      }
+    }
+  }
+}

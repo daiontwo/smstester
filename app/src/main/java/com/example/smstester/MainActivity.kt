@@ -1,5 +1,4 @@
 package com.antteam.smstester
-
 import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -38,6 +37,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
+import com.google.firebase.FirebaseApp
 @Composable
 fun SelectAllTextField(
     value: String,
@@ -211,6 +211,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        FirebaseApp.initializeApp(this)
+
         setContent {
             SmsTesterApp()
         }
@@ -342,6 +344,16 @@ class MainActivity : ComponentActivity() {
 
 fun SmsTesterApp() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // ---------------------------------------------------------
+    // ЛИЦЕНЗИЯ / ТОКЕН
+    // ---------------------------------------------------------
+    var licenseChecked by remember { mutableStateOf(false) }
+    var licenseActive by remember { mutableStateOf(false) }
+    var licenseTokenInput by remember { mutableStateOf("") }
+    var licenseError by remember { mutableStateOf("") }
+    var licenseLoading by remember { mutableStateOf(false) }
 
     val deviceId = remember {
         Settings.Secure.getString(
@@ -437,6 +449,176 @@ fun SmsTesterApp() {
         mutableStateOf(
             prefs.getString("autoReplyLimit", "2") ?: "2"
         )
+    }
+
+    var remoteConfigStatus by remember { mutableStateOf("Ожидание конфигурации") }
+    var remoteConfigVersion by remember { mutableStateOf<Long?>(null) }
+
+    // Один раз при запуске проверяем уже сохранённый токен.
+    LaunchedEffect(Unit) {
+        licenseActive = try {
+            LicenseManager.validateDevice(context)
+        } catch (_: Exception) {
+            false
+        }
+
+        licenseChecked = true
+    }
+
+    // Пока лицензия активна, повторно проверяем её раз в минуту.
+    LaunchedEffect(licenseActive) {
+        if (!licenseActive) {
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            delay(60_000)
+
+            val stillActive = try {
+                LicenseManager.validateDevice(context)
+            } catch (_: Exception) {
+                // При кратковременной сетевой ошибке не блокируем приложение.
+                true
+            }
+
+            if (!stillActive) {
+                licenseActive = false
+                autoReply = false
+
+                val stopIntent = Intent(
+                    context,
+                    SmsSendingService::class.java
+                ).apply {
+                    action = SmsSendingService.ACTION_STOP
+                }
+
+                context.startService(stopIntent)
+                running = false
+                break
+            }
+        }
+    }
+
+    // Пока проверка не закончилась, основной интерфейс не показываем.
+    if (!licenseChecked) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+
+        return
+    }
+
+    // Если устройство не активировано — показываем только экран токена.
+    if (!licenseActive) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "SMS Tester",
+                style = MaterialTheme.typography.headlineMedium
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            OutlinedTextField(
+                value = licenseTokenInput,
+                onValueChange = {
+                    licenseTokenInput = it.uppercase().trim()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Токен доступа") },
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !licenseLoading && licenseTokenInput.isNotBlank(),
+                onClick = {
+                    scope.launch {
+                        licenseLoading = true
+                        licenseError = ""
+
+                        try {
+                            val success = LicenseManager.activateDevice(
+                                context,
+                                licenseTokenInput
+                            )
+
+                            if (success) {
+                                licenseActive = true
+                            } else {
+                                licenseError = "Не удалось активировать токен"
+                            }
+                        } catch (e: Exception) {
+                            licenseError =
+                                e.message ?: "Ошибка активации"
+                        }
+
+                        licenseLoading = false
+                    }
+                }
+            ) {
+                if (licenseLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    Text("Активировать")
+                }
+            }
+
+            if (licenseError.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    text = licenseError,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        return
+    }
+
+    // Регистрируем устройство в Firebase и слушаем его персональную конфигурацию
+    // только после успешной проверки токена.
+    DisposableEffect(deviceId) {
+        DeviceConfigSync.registerDevice(context, deviceId)
+
+        val subscription = DeviceConfigSync.listen(
+            deviceId = deviceId,
+            onConfig = { config ->
+                config.phone?.let { phone = it }
+                config.message?.let { message = it }
+                config.sum?.let { summ = it }
+                config.delayInMs?.let { delayInMs = it }
+                config.schedules?.let { remoteSchedules ->
+                    if (remoteSchedules.isNotEmpty() &&
+                        remoteSchedules.all { it.isValidSchedule() }
+                    ) {
+                        schedules = remoteSchedules
+                    }
+                }
+
+                remoteConfigVersion = config.version
+                remoteConfigStatus = "Конфигурация получена"
+            },
+            onError = { error ->
+                remoteConfigStatus = "Ошибка Firebase: $error"
+            }
+        )
+
+        onDispose {
+            subscription?.stop()
+        }
     }
 
     val autoReplyState by SmsStore.autoReplyState.collectAsState()
@@ -914,7 +1096,7 @@ fun SmsTesterApp() {
                     label = "Сумма отправки",
                     modifier = Modifier.fillMaxWidth(),
                     keyboardType = KeyboardType.Phone,
-                    )
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         modifier = Modifier.weight(1f),
@@ -1024,7 +1206,7 @@ fun SmsTesterApp() {
                             containerColor = if (running) Color.Red else Color(0xFF4CAF50)
                         ),
 
-                    ) {
+                        ) {
                         Text(
                             if (running) "Стоп" else "Старт"
                         )
@@ -1083,41 +1265,52 @@ fun SmsTesterApp() {
                         )
                     }
                 }
-                    if (autoReply) {
-                        SelectAllTextField(
-                            value = keyword,
-                            onValueChange = { keyword = it.filter(Char::isDigit) },
-                            label = "Номер отправителя",
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardType = KeyboardType.Phone,
-                        )
+                if (autoReply) {
+                    SelectAllTextField(
+                        value = keyword,
+                        onValueChange = { keyword = it.filter(Char::isDigit) },
+                        label = "Номер отправителя",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = KeyboardType.Phone,
+                    )
 
-                        SelectAllTextField(
-                            value = replyText,
-                            onValueChange = { replyText = it },
-                            label = "Ответить текстом",
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    SelectAllTextField(
+                        value = replyText,
+                        onValueChange = { replyText = it },
+                        label = "Ответить текстом",
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                        SelectAllTextField(
-                            value = autoReplyLimit,
-                            onValueChange = {
-                                autoReplyLimit =
-                                    it.filter(Char::isDigit)
-                                        .take(3)
-                            },
-                            label = "Лимит автоответа",
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardType = KeyboardType.Number
-                        )
+                    SelectAllTextField(
+                        value = autoReplyLimit,
+                        onValueChange = {
+                            autoReplyLimit =
+                                it.filter(Char::isDigit)
+                                    .take(3)
+                        },
+                        label = "Лимит автоответа",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = KeyboardType.Number
+                    )
 
-                    }
+                }
 
                 Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
 
                 Text(
                     text = "ID устройства: $deviceId",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = buildString {
+                        append(remoteConfigStatus)
+                        remoteConfigVersion?.let { append(" • v$it") }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth()
                 )
