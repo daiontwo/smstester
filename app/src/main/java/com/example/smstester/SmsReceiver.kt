@@ -53,13 +53,9 @@ class SmsReceiver : BroadcastReceiver() {
 
         val isFailureMessage =
             from.trim() == "7878" &&
-                    (
-                            text.contains(
-                                "операция отклонена",
-                                ignoreCase = true
-                            ) ||
-                                    text.contains("0611")
-                            )
+                    (text.contains("операция отклонена", ignoreCase = true)
+                        || text.contains("сервис временно недоступен", ignoreCase = true))
+                        || text.contains("неверная информация", ignoreCase = true)
 
         if (isFailureMessage) {
 

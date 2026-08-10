@@ -5,7 +5,7 @@ import android.os.Build
 import android.provider.Settings
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.tasks.await
-
+import com.google.firebase.FirebaseApp
 object LicenseManager {
 
     private const val PREFS = "license_prefs"

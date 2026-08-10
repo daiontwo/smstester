@@ -36,7 +36,6 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 import com.google.firebase.FirebaseApp
 @Composable
 fun SelectAllTextField(
@@ -788,7 +787,7 @@ fun SmsTesterApp() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
-                                    color = Color(0xFFFFF8E1),
+                                    color = Color(0xFFFCFCFC),
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .padding(14.dp)
@@ -806,24 +805,34 @@ fun SmsTesterApp() {
                                 )
 
                                 Text(
-                                    text = "Номер: ${warning.phone}"
+                                    text = "Номер: ${warning.phone}",
+                                            color = Color(0xFFF57F17),
+
                                 )
 
                                 Text(
                                     text = "Время: $timeText"
+                                    ,
+                                    color = Color(0xFFF57F17),
                                 )
 
                                 Text(
                                     text = "Сумма: $summ"
+                                    ,
+                                    color = Color(0xFFF57F17),
                                 )
 
                                 Text(
                                     text = "Сообщение:",
                                     fontWeight = FontWeight.Bold
+                                    ,
+                                    color = Color(0xFFF57F17),
                                 )
 
                                 Text(
-                                    text = warning.text
+                                    text = warning.text,
+                                            color = Color(0xFFF57F17),
+
                                 )
                             }
                         }
@@ -912,15 +921,18 @@ fun SmsTesterApp() {
                                 )
 
                                 Text(
-                                    text = "Номер: ${failure.phone}"
+                                    text = "Номер: ${failure.phone}",
+                                    color = Color(0xFFC62828),
                                 )
 
                                 Text(
-                                    text = "Время: $timeText"
+                                    text = "Время: $timeText",
+                                    color = Color(0xFFC62828),
                                 )
 
                                 Text(
-                                    text = "Ответ: ${failure.text}"
+                                    text = "Ответ: ${failure.text}",
+                                    color = Color(0xFFC62828),
                                 )
                             }
                         }
@@ -997,11 +1009,15 @@ fun SmsTesterApp() {
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
 
-                                Text("Номер: ${success.phone}")
-                                Text("Время: $timeText")
-                                Text("Сумма: $summ")
+                                Text("Номер: ${success.phone}",
+                                    color = Color(0xFF2E7D32),)
+                                Text("Время: $timeText",
+                                    color = Color(0xFF2E7D32),)
+                                Text("Сумма: $summ",
+                                    color = Color(0xFF2E7D32),)
 
                                 Text(
+                                    color = Color(0xFF2E7D32),
                                     text =
                                         if (success.sent >= success.limit) {
                                             "Завершено: ${success.sent} из ${success.limit}"

@@ -23,7 +23,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.antteam.smstestergit"
+        applicationId = "com.antteam.smstester"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -43,8 +43,10 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("com.google.firebase:firebase-database")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation("com.google.firebase:firebase-database")
+    implementation("com.google.firebase:firebase-functions")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 }
 
 
