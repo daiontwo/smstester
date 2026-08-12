@@ -29,6 +29,11 @@ object DeviceConfigSync {
         val version: Long? = null
     )
 
+    data class RemoteCommand(
+        val commandId: String,
+        val running: Boolean
+    )
+
     class Subscription internal constructor(
         private val reference: DatabaseReference,
         private val listener: ValueEventListener
@@ -138,6 +143,39 @@ object DeviceConfigSync {
 
         reference.addValueEventListener(listener)
         return Subscription(reference, listener)
+    }
+
+    fun listenCommands(
+        deviceId: String,
+        onCommand: (RemoteCommand) -> Unit,
+        onError: (String) -> Unit = {}
+    ): Subscription? {
+        if (deviceId.isBlank()) return null
+        val reference = database().getReference("devices").child(deviceId).child("command")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val commandId = snapshot.child("commandId").value?.toString().orEmpty()
+                val running = snapshot.child("running").getValue(Boolean::class.java)
+                if (commandId.isNotBlank() && running != null) {
+                    onCommand(RemoteCommand(commandId, running))
+                }
+            }
+            override fun onCancelled(error: DatabaseError) = onError(error.message)
+        }
+        reference.addValueEventListener(listener)
+        return Subscription(reference, listener)
+    }
+
+    fun reportRuntime(deviceId: String, commandId: String, running: Boolean, error: String = "") {
+        if (deviceId.isBlank()) return
+        database().getReference("devices").child(deviceId).child("runtime").setValue(
+            mapOf(
+                "commandId" to commandId,
+                "running" to running,
+                "error" to error,
+                "updatedAt" to ServerValue.TIMESTAMP
+            )
+        )
     }
 
     private fun DataSnapshot.asStringOrNull(): String? {

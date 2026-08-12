@@ -16,6 +16,11 @@ object LicenseManager {
             "europe-west1"
         )
 
+    fun normalizeToken(value: String): String = value
+        .uppercase()
+        .replace(Regex("[^A-Z0-9]"), "")
+        .trim()
+
     fun getDeviceId(context: Context): String {
 
         return Settings.Secure.getString(
@@ -82,7 +87,7 @@ object LicenseManager {
 
         val data =
             hashMapOf(
-                "token" to token.trim(),
+                "token" to normalizeToken(token),
                 "deviceId" to getDeviceId(context),
                 "deviceName" to getDeviceName()
             )
@@ -109,7 +114,7 @@ object LicenseManager {
 
             saveToken(
                 context,
-                token.trim()
+                normalizeToken(token)
             )
 
             return true
