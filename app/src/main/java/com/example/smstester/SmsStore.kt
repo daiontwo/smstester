@@ -60,6 +60,7 @@ object SmsStore {
     var autoReplyEnabled: Boolean = false
     var autoReplyKeyword: String = "8464"
     var autoReplyText: String = "да"
+    private const val AUTO_REPLY_REQUIRED_TEXT = "Перевод в Таджикистан"
 
     // Сколько входящих SMS нужно обработать
     var autoReplyLimit: Int = 2
@@ -101,13 +102,19 @@ object SmsStore {
         MutableStateFlow<AutoReplySuccess?>(null)
 
     @Synchronized
-    fun tryAutoReply(from: String): Boolean {
+    fun tryAutoReply(from: String, incomingText: String): Boolean {
 
         if (!autoReplyEnabled) {
             return false
         }
 
-        if (from != autoReplyKeyword) {
+        val senderDigits = from.filter(Char::isDigit)
+        val expectedDigits = autoReplyKeyword.filter(Char::isDigit)
+        if (expectedDigits.isBlank() || !senderDigits.endsWith(expectedDigits)) {
+            return false
+        }
+
+        if (!incomingText.contains(AUTO_REPLY_REQUIRED_TEXT, ignoreCase = true)) {
             return false
         }
 

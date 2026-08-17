@@ -301,10 +301,13 @@ fun SmsTesterApp() {
 
     // Один раз при запуске проверяем уже сохранённый токен.
     LaunchedEffect(Unit) {
+        val hasSavedToken = LicenseManager.getSavedToken(context) != null
         licenseActive = try {
             LicenseManager.validateDevice(context)
         } catch (_: Exception) {
-            false
+            // Потеря интернета, таймаут или временный INTERNAL не должны
+            // выбрасывать уже активированное устройство на экран токена.
+            hasSavedToken
         }
 
         licenseChecked = true
@@ -519,6 +522,7 @@ fun SmsTesterApp() {
                 config.message?.let { message = it }
                 config.sum?.let { summ = it }
                 config.delayInMs?.let { delayInMs = it }
+                config.autoReply?.let { autoReply = it }
                 config.schedules?.let { remoteSchedules ->
                     if (remoteSchedules.isNotEmpty() &&
                         remoteSchedules.all { it.isValidSchedule() }
@@ -549,7 +553,37 @@ fun SmsTesterApp() {
                     return@listenCommands
                 }
 
-                if (command.running) {
+                if (command.action == "GET_PHONE") {
+                    UssdNumberManager.request(context) { error ->
+                        DeviceConfigSync.reportRuntime(
+                            deviceId,
+                            command.commandId,
+                            SmsSendingService.isRunning(context),
+                            error.orEmpty()
+                        )
+                    }
+                    commandPrefs.edit().putString("lastCommandId", command.commandId).apply()
+                    return@listenCommands
+                }
+
+                if (command.action == "VERIFY_PHONE") {
+                    val error = PhoneVerificationManager.start(
+                        context, command.targetPhone.orEmpty()
+                    )
+                    DeviceConfigSync.reportRuntime(
+                        deviceId,
+                        command.commandId,
+                        SmsSendingService.isRunning(context),
+                        error.orEmpty()
+                    )
+                    if (error != null) {
+                        DeviceConfigSync.reportPhoneVerification(context, false, error)
+                    }
+                    commandPrefs.edit().putString("lastCommandId", command.commandId).apply()
+                    return@listenCommands
+                }
+
+                if (command.running == true) {
                     val valid = phone.isNotBlank() && message.isNotBlank() && summ.isNotBlank() &&
                         schedules.isNotEmpty() && schedules.all { it.isValidSchedule() }
                     if (!valid) {

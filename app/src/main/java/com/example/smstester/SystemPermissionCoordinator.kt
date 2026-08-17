@@ -42,6 +42,7 @@ class SystemPermissionCoordinator(
         val permissions = buildList {
             addIfMissing(Manifest.permission.SEND_SMS)
             addIfMissing(Manifest.permission.RECEIVE_SMS)
+            addIfMissing(Manifest.permission.CALL_PHONE)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 addIfMissing(Manifest.permission.POST_NOTIFICATIONS)

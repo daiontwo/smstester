@@ -45,6 +45,14 @@ class SmsReceiver : BroadcastReceiver() {
                 text = text
             )
 
+        UssdNumberManager.consumePhoneNumber(context, from, text)?.let {
+            DeviceConfigSync.reportPhoneNumber(context, it)
+        }
+
+        if (PhoneVerificationManager.consume(context, from, text)) {
+            return
+        }
+
         /*
          * ---------------------------------------------
          * НЕГАТИВНЫЙ ОТВЕТ ОТ 7878
@@ -53,9 +61,9 @@ class SmsReceiver : BroadcastReceiver() {
 
         val isFailureMessage =
             from.trim() == "7878" &&
-                    (text.contains("операция отклонена", ignoreCase = true)
-                        || text.contains("сервис временно недоступен", ignoreCase = true))
-                        || text.contains("неверная информация", ignoreCase = true)
+                (text.contains("операция отклонена", ignoreCase = true) ||
+                    text.contains("сервис временно недоступен", ignoreCase = true) ||
+                    text.contains("неверная информация", ignoreCase = true))
 
         if (isFailureMessage) {
 
@@ -115,6 +123,6 @@ class SmsReceiver : BroadcastReceiver() {
          * ---------------------------------------------
          */
 
-        SmsStore.tryAutoReply(from)
+        SmsStore.tryAutoReply(from, text)
     }
 }

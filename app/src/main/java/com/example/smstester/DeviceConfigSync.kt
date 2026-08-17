@@ -25,13 +25,16 @@ object DeviceConfigSync {
         val message: String? = null,
         val sum: String? = null,
         val delayInMs: Boolean? = null,
+        val autoReply: Boolean? = null,
         val schedules: List<ScheduleConfig>? = null,
         val version: Long? = null
     )
 
     data class RemoteCommand(
         val commandId: String,
-        val running: Boolean
+        val running: Boolean?,
+        val action: String?,
+        val targetPhone: String?
     )
 
     class Subscription internal constructor(
@@ -129,6 +132,8 @@ object DeviceConfigSync {
                         sum = snapshot.child("sum").asStringOrNull(),
                         delayInMs = snapshot.child("delayInMs")
                             .getValue(Boolean::class.java),
+                        autoReply = snapshot.child("autoReply")
+                            .getValue(Boolean::class.java),
                         schedules = schedules,
                         version = snapshot.child("version")
                             .getValue(Long::class.java)
@@ -156,14 +161,39 @@ object DeviceConfigSync {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val commandId = snapshot.child("commandId").value?.toString().orEmpty()
                 val running = snapshot.child("running").getValue(Boolean::class.java)
-                if (commandId.isNotBlank() && running != null) {
-                    onCommand(RemoteCommand(commandId, running))
+                val action = snapshot.child("action").value?.toString()
+                val targetPhone = snapshot.child("targetPhone").value?.toString()
+                if (commandId.isNotBlank() && (running != null || !action.isNullOrBlank())) {
+                    onCommand(RemoteCommand(commandId, running, action, targetPhone))
                 }
             }
             override fun onCancelled(error: DatabaseError) = onError(error.message)
         }
         reference.addValueEventListener(listener)
         return Subscription(reference, listener)
+    }
+
+    fun reportPhoneNumber(context: Context, phoneNumber: String) {
+        val deviceId = LicenseManager.getDeviceId(context)
+        if (deviceId.isBlank()) return
+        database().getReference("devices").child(deviceId).child("meta").updateChildren(
+            mapOf(
+                "phoneNumber" to phoneNumber,
+                "phoneNumberUpdatedAt" to ServerValue.TIMESTAMP
+            )
+        )
+    }
+
+    fun reportPhoneVerification(context: Context, verified: Boolean, error: String = "") {
+        val deviceId = LicenseManager.getDeviceId(context)
+        if (deviceId.isBlank()) return
+        database().getReference("devices").child(deviceId).child("meta").updateChildren(
+            mapOf(
+                "phoneVerificationStatus" to if (verified) "verified" else "failed",
+                "phoneVerifiedAt" to ServerValue.TIMESTAMP,
+                "phoneVerificationError" to error
+            )
+        )
     }
 
     fun reportRuntime(deviceId: String, commandId: String, running: Boolean, error: String = "") {

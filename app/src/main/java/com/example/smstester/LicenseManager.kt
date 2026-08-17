@@ -5,7 +5,7 @@ import android.os.Build
 import android.provider.Settings
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.tasks.await
-import com.google.firebase.FirebaseApp
+
 object LicenseManager {
 
     private const val PREFS = "license_prefs"
@@ -147,8 +147,12 @@ object LicenseManager {
 
         val response =
             result.data as? Map<*, *>
-                ?: return false
+                ?: throw IllegalStateException("INVALID_VALIDATE_RESPONSE")
 
-        return response["active"] == true
+        return when (response["active"]) {
+            true -> true
+            false -> false
+            else -> throw IllegalStateException("INVALID_VALIDATE_RESPONSE")
+        }
     }
 }
