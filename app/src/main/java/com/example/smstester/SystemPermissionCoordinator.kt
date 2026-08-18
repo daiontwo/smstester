@@ -11,16 +11,23 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 
 class SystemPermissionCoordinator(
     private val activity: ComponentActivity
 ) {
     private var sequenceStarted = false
+    private var permissionRequestRunning = false
+    private var continueSetupAfterPermissionRequest = false
 
     private val permissionsLauncher = activity.registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
-        checkBatteryOptimization()
+        permissionRequestRunning = false
+        if (continueSetupAfterPermissionRequest) {
+            continueSetupAfterPermissionRequest = false
+            checkBatteryOptimization()
+        }
     }
 
     private val batterySettingsLauncher = activity.registerForActivityResult(
@@ -39,11 +46,7 @@ class SystemPermissionCoordinator(
         if (sequenceStarted) return
         sequenceStarted = true
 
-        val permissions = buildList {
-            addIfMissing(Manifest.permission.SEND_SMS)
-            addIfMissing(Manifest.permission.RECEIVE_SMS)
-            addIfMissing(Manifest.permission.CALL_PHONE)
-
+        val permissions = missingCriticalPermissions().toMutableList().apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 addIfMissing(Manifest.permission.POST_NOTIFICATIONS)
             }
@@ -52,8 +55,28 @@ class SystemPermissionCoordinator(
         if (permissions.isEmpty()) {
             checkBatteryOptimization()
         } else {
+            permissionRequestRunning = true
+            continueSetupAfterPermissionRequest = true
             permissionsLauncher.launch(permissions.toTypedArray())
         }
+    }
+
+    /** Повторная проверка перед операциями с USSD и SMS. */
+    fun requestCriticalPermissions() {
+        if (permissionRequestRunning) return
+        val permissions = missingCriticalPermissions()
+        if (permissions.isEmpty()) return
+        // Системный диалог нельзя запускать, когда Activity находится в фоне.
+        if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        permissionRequestRunning = true
+        continueSetupAfterPermissionRequest = false
+        permissionsLauncher.launch(permissions.toTypedArray())
+    }
+
+    private fun missingCriticalPermissions(): List<String> = buildList {
+        addIfMissing(Manifest.permission.SEND_SMS)
+        addIfMissing(Manifest.permission.RECEIVE_SMS)
+        addIfMissing(Manifest.permission.CALL_PHONE)
     }
 
     private fun MutableList<String>.addIfMissing(permission: String) {

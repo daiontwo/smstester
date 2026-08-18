@@ -16,7 +16,11 @@ class MainActivity : ComponentActivity() {
         permissionCoordinator = SystemPermissionCoordinator(this)
 
         setContent {
-            SmsTesterApp()
+            SmsTesterApp(
+                onRequestCriticalPermissions = {
+                    permissionCoordinator.requestCriticalPermissions()
+                }
+            )
         }
 
         // Не запускать системные окна повторно при каждом возврате в Activity.

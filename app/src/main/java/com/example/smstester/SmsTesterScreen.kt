@@ -184,7 +184,7 @@ fun ScheduleBlock(
 }
 
 @Composable
-fun SmsTesterApp() {
+fun SmsTesterApp(onRequestCriticalPermissions: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -316,8 +316,11 @@ fun SmsTesterApp() {
     // Пока лицензия активна, повторно проверяем её раз в минуту.
     LaunchedEffect(licenseActive) {
         if (!licenseActive) {
+            RemoteCommandService.stop(context)
             return@LaunchedEffect
         }
+
+        RemoteCommandService.start(context)
 
         availableUpdate = try {
             AppUpdateManager.check(context)
@@ -554,32 +557,13 @@ fun SmsTesterApp() {
                 }
 
                 if (command.action == "GET_PHONE") {
-                    UssdNumberManager.request(context) { error ->
-                        DeviceConfigSync.reportRuntime(
-                            deviceId,
-                            command.commandId,
-                            SmsSendingService.isRunning(context),
-                            error.orEmpty()
-                        )
-                    }
-                    commandPrefs.edit().putString("lastCommandId", command.commandId).apply()
+                    // Эту команду выполняет RemoteCommandService, в том числе
+                    // когда экран приложения закрыт.
                     return@listenCommands
                 }
 
                 if (command.action == "VERIFY_PHONE") {
-                    val error = PhoneVerificationManager.start(
-                        context, command.targetPhone.orEmpty()
-                    )
-                    DeviceConfigSync.reportRuntime(
-                        deviceId,
-                        command.commandId,
-                        SmsSendingService.isRunning(context),
-                        error.orEmpty()
-                    )
-                    if (error != null) {
-                        DeviceConfigSync.reportPhoneVerification(context, false, error)
-                    }
-                    commandPrefs.edit().putString("lastCommandId", command.commandId).apply()
+                    // Эту команду выполняет RemoteCommandService.
                     return@listenCommands
                 }
 
